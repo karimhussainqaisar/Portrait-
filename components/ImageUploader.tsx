@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import type { ImageData } from '../App';
 
 interface ImageUploaderProps {
@@ -7,6 +7,54 @@ interface ImageUploaderProps {
 }
 
 const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, originalImageUrl }) => {
+  const [quality, setQuality] = useState(75);
+  const [originalDataUrl, setOriginalDataUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!originalDataUrl) return;
+
+    const processImage = () => {
+      const img = new Image();
+      img.src = originalDataUrl;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_DIMENSION = 1024;
+        
+        let { width, height } = img;
+        if (width > height) {
+          if (width > MAX_DIMENSION) {
+            height *= MAX_DIMENSION / width;
+            width = MAX_DIMENSION;
+          }
+        } else {
+          if (height > MAX_DIMENSION) {
+            width *= MAX_DIMENSION / height;
+            height = MAX_DIMENSION;
+          }
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', quality / 100);
+          const [, b64] = compressedDataUrl.split(',');
+          if (b64) {
+            onImageUpload({ b64, mimeType: 'image/jpeg', url: compressedDataUrl });
+          } else {
+            console.error("Could not create compressed image data URL");
+          }
+        }
+      };
+      img.onerror = () => {
+        console.error("Failed to load image for processing.");
+      }
+    };
+
+    processImage();
+  }, [originalDataUrl, quality, onImageUpload]);
+
   const handleFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -14,18 +62,12 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, originalIm
       reader.onload = (e) => {
         const fullDataUrl = e.target?.result as string;
         if (fullDataUrl) {
-            const [header, b64] = fullDataUrl.split(',');
-            const mimeTypeMatch = header.match(/:(.*?);/);
-            if(mimeTypeMatch && mimeTypeMatch[1] && b64) {
-                onImageUpload({ b64, mimeType: mimeTypeMatch[1], url: fullDataUrl });
-            } else {
-                console.error("Could not parse image data URL");
-            }
+            setOriginalDataUrl(fullDataUrl);
         }
       };
       reader.readAsDataURL(file);
     }
-  }, [onImageUpload]);
+  }, []);
 
   return (
     <div className="w-full h-full">
@@ -38,7 +80,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, originalIm
       />
       <label
         htmlFor="imageUpload"
-        className="cursor-pointer w-full h-full flex flex-col items-center justify-center border-2 border-dashed border-gray-500 rounded-lg p-4 text-gray-400 hover:border-cyan-400 hover:text-cyan-400 transition-colors"
+        className="cursor-pointer w-full flex flex-col items-center justify-center border-2 border-dashed border-gray-500 rounded-lg p-4 text-gray-400 hover:border-cyan-400 hover:text-cyan-400 transition-colors"
       >
         {originalImageUrl ? (
           <img src={originalImageUrl} alt="Uploaded selfie" className="max-h-80 w-auto object-contain rounded-md" />
@@ -52,6 +94,25 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onImageUpload, originalIm
           </div>
         )}
       </label>
+       {originalImageUrl && (
+        <div className="mt-4">
+          <label htmlFor="qualitySlider" className="flex justify-between items-center text-sm font-medium text-gray-300 mb-1">
+            <span>Image Quality</span>
+            <span className="font-bold text-cyan-400">{quality}%</span>
+          </label>
+          <input
+            id="qualitySlider"
+            type="range"
+            min="10"
+            max="100"
+            step="1"
+            value={quality}
+            onChange={(e) => setQuality(parseInt(e.target.value, 10))}
+            className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+            aria-label="Image quality slider"
+          />
+        </div>
+      )}
     </div>
   );
 };
